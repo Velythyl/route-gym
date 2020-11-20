@@ -6,11 +6,26 @@ import numpy as np
 def make_bigram(list):
     return [(list[i], list[i + 1]) for i in range(len(list) - 1)]
 
+# translate to numbers if need be
+def remap_to_numbers(networkx_graph):
+    mapping = {}
+    for i, node in enumerate(networkx_graph.nodes):
+        try:
+            if int(node) == node:
+                break
+        except ValueError:
+            pass
+
+        mapping[node] = i
+    return nx.relabel_nodes(networkx_graph, mapping)
+
 class Graph:
     def __init__(self, networkx_graph, origin, goal, weights=None, random_weights=(0,10)):
         networkx_graph = networkx_graph.copy()
-        self.was_directed = nx.is_directed(networkx_graph)  # useful for layout in render
+        self.was_directed = nx.is_directed(networkx_graph)
         networkx_graph = networkx_graph.to_directed()
+
+        networkx_graph = remap_to_numbers(networkx_graph)
 
         # initial, non-weighted adjacency matrix because when a weight is zero we confuse it for there not being an edge
         initial_adjacency_matrix = np.squeeze(
