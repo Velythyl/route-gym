@@ -1,3 +1,4 @@
+import math
 import time
 
 import gym
@@ -18,48 +19,62 @@ class ShortestRouteEnv(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, networkx_graph, origin, goal, weights=None, random_weights=(0,10)):
+    def __init__(self, networkx_graph, origin, goal, weights=None, random_weights=(0, 10), make_finite=False):
         super(ShortestRouteEnv, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
         self.viewer = None
-        self.reset(networkx_graph, origin, goal, weights, random_weights)
+        self.is_finite = make_finite
+        self.reset(networkx_graph, origin, goal, weights, random_weights, make_finite)
 
     def step(self, action):
         reward, done = self.graph.transition(action)
-        if not reward:  # action was invalid
-            reward = REWARD_INVALID
+        if str(reward) == "False":  # action was invalid. Python is dumb and testing for "not reward" catches 0...
+            reward = self.max_r * REWARD_INVALID
             print("INVALID!")
 
         return self.graph.position, reward, done, {}
 
-    def reset(self, networkx_graph=None, origin=None, goal=None, weights=None, random_weights=(0,10)):
+    def reset(self, networkx_graph=None, origin=None, goal=None, weights=None, random_weights=(0, 10), make_finite=False):
         if networkx_graph is None:
             self.graph.reset(origin, goal)
         else:
+            self.layout = None
+            self.graph = Graph(networkx_graph, origin, goal, weights, random_weights, make_finite)
+            self._make_PRAlpha()
             self.action_space = gym.spaces.Discrete(len(networkx_graph.nodes))
             self.observation_space = gym.spaces.Tuple((
                 gym.spaces.Discrete(len(networkx_graph.nodes)),
                 gym.spaces.Discrete(len(networkx_graph.nodes))
             ))
-            self.layout = None
-            self.graph = Graph(networkx_graph, origin, goal, weights, random_weights)
-            self._make_PRAlpha()
         return self.graph.position
 
-    def __make_R(self, multiplier):
-        self.R = self.graph.adj_mat.copy()
-        self.R[self.R == -1] = np.max(self.R) * 10
-        self.R = multiplier * self.R
-        # Problem! If we don't do this, doesn't converge; just learns to minimize until finding dead end
-        for action in range(self.R.shape[0]):
-            for node in range(self.R.shape[0]):
-                if self.P[action][node][self.graph.goal] == 1:
-                    self.R[node, self.graph.goal] = -1 * multiplier * self.graph.dijkstra_rew  # refund entire cost of path
-        pass
+    def __make_R(self, shortest):
+        self.R = self.graph.adj_mat.copy().astype("float64")
+
+        max_r = np.max(self.R)
+        self.max_r = max_r
+        # Make non-existent transitions very bad to use
+        self.R[self.R == -1] = max_r * 10
+
+        # make all weights non-zero                                                                       2
+        # using a simple + 1 doesn't work because it breaks these arrangements (start at A and go to B): A--C
+        #                                                                                             10 |  | 2
+        #                                                                                                B--D
+        #                                                                                                 5
+        self.R = self.R + 1 / (10*len(self.graph.ngraph.nodes))
+
+        self.R = -1 * self.R    # make rewards negative
+
+        # The incentive to go to the goal is that once there, the agent can "spin" on it, gaining no negative rewards
+        self.R[self.graph.goal, self.graph.goal] = 0
+
+        if not shortest:
+            self.R = 1/self.R
+
     # a bit weird, but allows us to redefine it easily in LongestRouteEnv
     def _make_R(self):
-        self.__make_R(-1)
+        self.__make_R(True)
 
     def _make_PRAlpha(self):
         adj_mat = self.graph.adj_mat.copy()
@@ -79,21 +94,21 @@ class ShortestRouteEnv(gym.Env):
         for n in range(len(self.graph.ngraph.nodes)):
             prob_mat_for_n = adj_mat.copy()
             # p of switching to non-connected node is 0
-            prob_mat_for_n[:,range_except_i(len(self.graph.ngraph.nodes), n)] = 0
+            prob_mat_for_n[:, range_except_i(len(self.graph.ngraph.nodes), n)] = 0
 
             # if action's node is not connected, stay in current node
             for i in range(len(self.graph.ngraph.nodes)):
                 if 1 in prob_mat_for_n[i]:
                     continue
                 else:
-                    prob_mat_for_n[i,i] = 1
+                    prob_mat_for_n[i, i] = 1
 
             P.append(prob_mat_for_n)
 
         self.P = np.array(P)
         self._make_R()
         self.alpha = np.array(range(len(self.graph.ngraph.nodes)))
-        self.alpha[self.graph.origin] = 1   # initial distribution is just the origin
+        self.alpha[self.graph.origin] = 1  # initial distribution is just the origin
 
     def get_dijkstra(self):
         """
@@ -126,13 +141,19 @@ class ShortestRouteEnv(gym.Env):
             self.viewer.window = pyglet.window.Window(width=self.viewer.width, height=self.viewer.height,
                                                       display=self.viewer.display, vsync=False, resizable=True)
         if self.layout is None:
-            self.layout = getattr(nx, f"{layout_function}_layout")(self.graph.ngraph)
+            fun = getattr(nx, f"{layout_function}_layout")
+            if layout_function == "spring":
+                self.layout = fun(self.graph.ngraph, k=10/math.sqrt(self.graph.ngraph.order()))
+            else:
+                self.layout = fun(self.graph.ngraph)
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(15, 15))
+        fig.tight_layout()
+        ax.axis("off")
 
         colors = np.array(["cyan"] * len(self.graph.ngraph.nodes))
-        colors[self.graph.goal] = "blue"
-        colors[self.graph.position] = "red"
+        colors[list(self.graph.ngraph.nodes).index(self.graph.goal)] = "blue"
+        colors[list(self.graph.ngraph.nodes).index(self.graph.position)] = "red"
 
         edge_colors = []
         for edge in self.graph.ngraph.edges:
@@ -144,10 +165,23 @@ class ShortestRouteEnv(gym.Env):
                 edge_colors.append("black")
 
 
-        nx.draw_networkx_nodes(self.graph.ngraph, self.layout, cmap=plt.get_cmap('jet'), node_color=colors, node_size=500)
+        nx.draw_networkx_nodes(self.graph.ngraph, self.layout, cmap=plt.get_cmap('jet'), node_color=colors, node_size=400)
         nx.draw_networkx_labels(self.graph.ngraph, self.layout)
-        nx.draw_networkx_edges(self.graph.ngraph, self.layout, edge_color=edge_colors, edgelist=[edge for edge in self.graph.ngraph.edges()], arrows=True, connectionstyle='arc3, rad = 0.1')
-        nx.draw_networkx_edge_labels(self.graph.ngraph, self.layout, edge_labels=nx.get_edge_attributes(self.graph.ngraph, "weight"), label_pos=0.3, font_size=10)
+        nx.draw_networkx_edges(self.graph.ngraph, self.layout, edge_color=edge_colors,
+                               edgelist=[edge for edge in self.graph.ngraph.edges()], arrows=True,
+                               connectionstyle='arc3, rad = 0.01')
+        weights = nx.get_edge_attributes(self.graph.ngraph, "weight")
+
+        weight_dict = {}
+        for i in range(self.graph.adj_mat.shape[0]):
+            for j in range(self.graph.adj_mat.shape[1]):
+                w = self.graph.adj_mat[i,j]
+                if w != -1:
+                    weight_dict[(i,j)] = w
+
+        nx.draw_networkx_edge_labels(self.graph.ngraph, self.layout,
+                                     edge_labels=weight_dict, label_pos=0.25,
+                                     font_size=12)
 
         fig.canvas.draw()
         image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
@@ -156,6 +190,9 @@ class ShortestRouteEnv(gym.Env):
 
         self.viewer.imshow(image_from_plot)
         time.sleep(human_reading_delay)
+
+    def close(self):
+        self.viewer.window.close()
 
 class LongestRouteEnv(ShortestRouteEnv):
     def _make_R(self):
