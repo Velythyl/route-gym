@@ -40,13 +40,8 @@ def env_gen(n):
                 continue
             if nx.has_path(graph, o, g):
                 break
-        np.random.seed(100)
-        env2 = ShortestRouteEnv(graph, o, g, random_weights=(1, 200), make_finite=False)
-        env2.render()
-        np.random.seed(100)
-        env.reset(graph, o, g, random_weights=(1, 200), make_finite=True)
 
-
+        env.reset(graph, o, g, random_weights=(1, 200), make_horizon=True)
         yield
 #np.random.seed(1)
 np.random.seed(100)
@@ -54,7 +49,7 @@ np.random.seed(100)
 
 ENV_QTTY = 1000
 from tqdm import trange
-env = ShortestRouteEnv(nx.frucht_graph(), 0, 5) # Fake
+env = ShortestRouteEnv(nx.frucht_graph(), 0, 5, random_weights=(1,10)) # Fake
 #env.render()
 #env.graph._define_finite_problem()
 

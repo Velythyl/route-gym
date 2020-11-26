@@ -19,13 +19,12 @@ class ShortestRouteEnv(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, networkx_graph, origin, goal, weights=None, random_weights=(0, 10), make_finite=False):
+    def __init__(self, networkx_graph, origin, goal, weights=None, random_weights=(0, 10), make_horizon=False):
         super(ShortestRouteEnv, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
         self.viewer = None
-        self.is_finite = make_finite
-        self.reset(networkx_graph, origin, goal, weights, random_weights, make_finite)
+        self.reset(networkx_graph, origin, goal, weights, random_weights,make_horizon)
 
     def step(self, action):
         reward, done = self.graph.transition(action)
@@ -35,12 +34,12 @@ class ShortestRouteEnv(gym.Env):
 
         return self.graph.position, reward, done, {}
 
-    def reset(self, networkx_graph=None, origin=None, goal=None, weights=None, random_weights=(0, 10), make_finite=False):
+    def reset(self, networkx_graph=None, origin=None, goal=None, weights=None, random_weights=(0, 10), make_horizon=False):
         if networkx_graph is None:
             self.graph.reset(origin, goal)
         else:
             self.layout = None
-            self.graph = Graph(networkx_graph, origin, goal, weights, random_weights, make_finite)
+            self.graph = Graph(networkx_graph, origin, goal, weights, random_weights, make_horizon)
             self._make_PRAlpha()
             self.action_space = gym.spaces.Discrete(len(networkx_graph.nodes))
             self.observation_space = gym.spaces.Tuple((
@@ -118,7 +117,7 @@ class ShortestRouteEnv(gym.Env):
         """
         return self.graph.dijkstra_path, self.graph.dijkstra_rew
 
-    def render(self, mode='human', human_reading_delay=1, layout_function="spring"):
+    def render(self, mode='human', human_reading_delay=1, layout_function=None):
         """
         Renders the state of the env for a human
 
@@ -127,8 +126,13 @@ class ShortestRouteEnv(gym.Env):
         @param layout_function: Any networkx layout works here https://networkx.org/documentation/stable/reference/drawing.html#module-networkx.drawing.layout
         """
 
-        if self.graph.was_directed:
-            layout_function = "shell"
+        if layout_function == None:
+            if self.graph.was_directed:
+                layout_function = "shell"
+            elif self.graph.make_horizon:
+                layout_function = "horizon"
+            else:
+                "spring"
 
         from gym.envs.classic_control import rendering
         import matplotlib.pyplot as plt
@@ -141,11 +145,15 @@ class ShortestRouteEnv(gym.Env):
             self.viewer.window = pyglet.window.Window(width=self.viewer.width, height=self.viewer.height,
                                                       display=self.viewer.display, vsync=False, resizable=True)
         if self.layout is None:
-            fun = getattr(nx, f"{layout_function}_layout")
-            if layout_function == "spring":
-                self.layout = fun(self.graph.ngraph, k=10/math.sqrt(self.graph.ngraph.order()))
+            if layout_function == "horizon":
+                from utils import hierarchy_pos
+                self.layout = hierarchy_pos(self.graph.ngraph, self.graph.origin)
             else:
-                self.layout = fun(self.graph.ngraph)
+                fun = getattr(nx, f"{layout_function}_layout")
+                if layout_function == "spring":
+                    self.layout = fun(self.graph.ngraph, k=10/math.sqrt(self.graph.ngraph.order()))
+                else:
+                    self.layout = fun(self.graph.ngraph)
 
         fig, ax = plt.subplots(figsize=(15, 15))
         fig.tight_layout()
@@ -153,6 +161,7 @@ class ShortestRouteEnv(gym.Env):
 
         colors = np.array(["cyan"] * len(self.graph.ngraph.nodes))
         colors[list(self.graph.ngraph.nodes).index(self.graph.goal)] = "blue"
+        colors[list(self.graph.ngraph.nodes).index(self.graph.origin)] = "pink"
         colors[list(self.graph.ngraph.nodes).index(self.graph.position)] = "red"
 
         edge_colors = []
