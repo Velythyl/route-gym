@@ -127,12 +127,11 @@ class ShortestRouteEnv(gym.Env):
         """
 
         if layout_function == None:
+            layout_function = "spring"
             if self.graph.was_directed:
                 layout_function = "shell"
             elif self.graph.make_horizon:
                 layout_function = "horizon"
-            else:
-                "spring"
 
         from gym.envs.classic_control import rendering
         import matplotlib.pyplot as plt
