@@ -1,61 +1,58 @@
-# Cop-Robbers-Gym
-An openai gym that allows agent to catch bad guys and bad guys to escape from the long arm of the law.
+# Route-Gym
+An openai gym that allows agent to solve shortest and longest route problems.
 
+These simples are simple for humans, and can be computed easily by hand using Dijkstra's algorithm
+and its variants like A* (computation time permitting). As we work towards AGI, it is of my opinion that our complicated general-purpose
+algorithms should be asked to solve these simple problems. If convergence is slow, or if the supposedly 
+"general" algorithm can't solve it easily,
+it is safe to say that that algorithm should be reworked.
+
+# Quickstart
+
+    env = ShortestRouteEnv(nx.frucht_graph(), 0, 5, random_weights=(1,10))
+    env.render()    # optionnal
+    done = False
+    # you might want to give the adjacency matrix to the policy
+    policy = ?
+    rew = 0
+    position = origin
+    while not done:
+        action = policy.predict(position)
+        position, reward, done, _ = env.step(action)
+        end.render()    # optionnal
+        rew += reward
+    print("Final reward:", rew)
+    print("Dijkstra's reward:", env.graph.dijkstra_rew)
+        
 # What is provided in this gym?
 
-## Controllers:
+## The environment:
 
-Basic controllers are useful when one only wants to train one of the sides of this problem. 
-### A naive controller for both the robber and the cops is provided. 
-Notice that even though its decision rules are fairly simple, it still offers non-terrible
-performance. Here are a few examples on the Petersen graph (which is of cop number 3):
+The two environments are based neton [OpenAI's `gym`](https://github.com/openai/gym).
 
-With one cop:
+The environment can be called using `routegym.env.ShortestRouteEnv` or the equivalent for the longest route version.
 
-![gif of robber vs one cop](img/1.gif)
+The environments have a `render` function you can use to display the environment's state. In it, the blue path on the
+graph's arcs represents Dijkstra's path. This only works for `ShortestRouteEnv`.
 
-With two cops:
- 
-![gif of robber vs two cops](img/2.gif)
+The environments receive a [`networkx`](https://github.com/networkx/networkx) graph, an origin, a goal, and random weight
+boundaries (if need be) as part of their constructor. 
 
-With three cops (the robber instantly loses):
+You can also set the `make_horizon` flag to `True` to transform the graph
+into a finite-horizon problem. Be warned that this should only be used on smaller graphs: this generates a tree out
+of all the possible paths the agent can take from `origin` to `goal` and merges them into a single graph. Needless to say,
+the big O of this thing is enormous! This flag should only be used for toy examples.
 
-![gif of robber vs three cops](img/3.gif)
+## The Graph class
 
-### The DAM/DAM1 (Dynamic Abstract Minimax) controller
+The environments use a custom graph class as a backend. A typical user should not need to interact with this class.
 
-As explored in this paper https://era.library.ualberta.ca/items/204f907a-0f02-4ee5-a42a-0c0baa364543 .
+But this class does calculate the Dijkstra solution for the problem. If you want to compare your algorithm's performance
+to Dijkstra's, you can use `env.graph.dijkstra_path` to get Dijkstra's path, or `env.graph.dijkstra_rew` to get Dijkstra's reward.
 
-The paper does say that DATrailMax and TrailMax offer the best "suboptimality" of the included algorithms. 
-![table of comparison between pursuit algorithms](img/table.jpg)
-However, notice
-that the computation time column indicates that both of those algorithms may require more than an hour of computation. This
-is completely inadequate for our setting.
+## The validate script
 
-The next-best thing is improved Cover, but its computation time is even worse. 
+This is an internal test, but it is provided as a courtesy to the users. You can get inspiration from that script, either
+as a tutorial on how to use this package, or as a way to generate many environments, etc.
 
-Hence, DAM and DAM1 were chosen for this project, as they offer only 7 to 9 percent worse suboptimality while being able to
-parse maps in around two minutes.
-
-DAM was first defined in https://www.aaai.org/Papers/Workshops/2006/WS-06-11/WS06-11-012.pdf . DAM1 is a simple modification of DAM where
-the lookahead is fixed to 1.
-
-DAM uses the graph abstraction technique described in http://citeseerx.ist.psu.edu/viewdoc/download;jsessionid=E329D415068066663D34B192EAB274D7?doi=10.1.1.122.4060&rep=rep1&type=pdf .
-
-# Related work
-
-Cops&robbers has been extensively studied in graph theory. However, we are still very far from a feasible algorithm, that could inform us on the "cop-win-ness" of any graph. 
-
-https://www.researchgate.net/publication/317309149_Linguistic_Geometry_Approach_for_Solving_the_Cops_and_Robber_Problem_in_Grid_Environments 
-
-https://www.google.com/url?sa=t&source=web&rct=j&url=http://webdocs.cs.ualberta.ca/~nathanst/papers/TrailMax.pdf&ved=2ahUKEwi_3c3F_vHrAhVxk-AKHVhlCHsQFjAEegQIBBAB&usg=AOvVaw0MEzu6bxMoV1wrA0PC2zC3&cshid=1600407784378
-
-Simultaneous case: 
-https://era.library.ualberta.ca/items/204f907a-0f02-4ee5-a42a-0c0baa364543
-
-
-# Notes
-
-For finding cliques: define "coarseness" from 1/1 1/2 1/3 etc. Take coarseness times NB nodes. For each level of abstraction, repeatedly find all triangles, collapse them until we're at coarseness, and then remove leaves.
-
-https://www.aaai.org/Papers/Workshops/2006/WS-06-11/WS06-11-012.pdf is real time, and agents cant move while they think. Doesnt really matter here, as our env if just more similar to https://era.library.ualberta.ca/items/204f907a-0f02-4ee5-a42a-0c0baa364543
+You can view it in `routegym.validate.py`.

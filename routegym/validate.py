@@ -1,11 +1,9 @@
-from inspect import getmembers, isfunction
-
 import numpy as np
 import random
 import networkx as nx
 
-from env import ShortestRouteEnv
-from train import get_pi
+from routegym.env import ShortestRouteEnv
+from routegym.train import get_policy_iteration
 
 MAKE_HORIZON = True
 
@@ -60,7 +58,7 @@ for _ in trange(ENV_QTTY):
     next(generator)
 
     render()
-    policy = get_pi(env)
+    policy = get_policy_iteration(env)
 
     done = False
     position = env.graph.origin
