@@ -6,19 +6,6 @@ import numpy as np
 def make_bigram(list):
     return [(list[i], list[i + 1]) for i in range(len(list) - 1)]
 
-# translate to numbers if need be
-def remap_to_numbers(networkx_graph):
-    mapping = {}
-    for i, node in enumerate(networkx_graph.nodes):
-        try:
-            if int(node) == node:
-                break
-        except ValueError:
-            pass
-
-        mapping[node] = i
-    return nx.relabel_nodes(networkx_graph, mapping)
-
 def get_correct_adj_mat(ngaph):
     initial_adjacency_matrix = np.squeeze(
         np.asarray(
@@ -67,7 +54,17 @@ class Graph:
 
         networkx_graph, origin, goal = (networkx_graph, origin, goal) if not make_horizon else self._make_horizons(networkx_graph, origin, goal)
 
-        self.make_horizon = make_horizon
+        if sorted(list(networkx_graph.nodes)) != list(range(networkx_graph.order())):   # must rename to make nodes from 0 to order-1
+            dico = {}
+            for i, node in enumerate(networkx_graph.nodes):
+                dico[node] = i
+                if node == goal:
+                    goal = i
+                elif node == origin:
+                    origin = i
+            networkx_graph = nx.relabel_nodes(networkx_graph, dico)
+
+        self.made_horizon = make_horizon
         self.ngraph = networkx_graph
         self.adj_mat = get_correct_adj_mat(networkx_graph)
         self.adjacent_indices = [np.nonzero(self.adj_mat[i] != -1)[0] for i in range(self.adj_mat.shape[0])]
@@ -196,9 +193,11 @@ class Graph:
         while True:
             self.horizon_states.append(front)
             all_sucs = set()
+            acts_per_state = []
+            self.horizon_acts.append(acts_per_state)
             for node in front:
                 sucs = list(ngraph.successors(node))
-                self.horizon_acts.append(sucs)
+                acts_per_state.append(sucs)
                 all_sucs = all_sucs.union(set(sucs))
             if len(all_sucs) == 0:
                 break
@@ -213,9 +212,25 @@ class Graph:
         self.goal = goal
         self.path = [origin]
         self.path_bigram = []
+
         self.dijkstra_path = nx.dijkstra_path(self.ngraph, origin, goal)
         self.dijkstra_bigram = make_bigram(self.dijkstra_path)
         self.dijkstra_rew = sum([self.adj_mat[(e1, e2)] for e1, e2 in self.dijkstra_bigram])
+
+        all_simple_paths = list(nx.all_simple_paths(self.ngraph, origin, goal))
+        ws = []
+        for path in all_simple_paths:
+            big = make_bigram(path)
+            weight = 0
+            for e1, e2 in big:
+                weight += self.adj_mat[e1,e2]
+            ws.append(weight)
+        i = np.argmax(np.array(ws))
+
+        self.longest_path_rew = ws[i]
+        self.longest_path = all_simple_paths[i]
+        self.longest_path_bigram = make_bigram(self.longest_path)
+
 
     def reset(self, origin=None, goal=None):
         if origin is None:

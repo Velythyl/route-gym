@@ -1,3 +1,4 @@
+import copy
 import math
 import time
 
@@ -11,7 +12,6 @@ REWARD_INVALID = -1000
 
 WINDOW_W = WINDOW_H = 1000
 
-
 # TODO allow cop to move faster than robber should it be needed (see paper). basically just give it d turns before the
 # turn bool switches
 class ShortestRouteEnv(gym.Env):
@@ -19,7 +19,8 @@ class ShortestRouteEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, networkx_graph, origin, goal, weights=None, random_weights=(0, 10), make_horizon=False):
-        super(ShortestRouteEnv, self).__init__()
+        super(gym.Env, self).__init__()
+
         # Define action and observation space
         # They must be gym.spaces objects
         self.viewer = None
@@ -40,6 +41,8 @@ class ShortestRouteEnv(gym.Env):
             self.layout = None
             self.graph = Graph(networkx_graph, origin, goal, weights, random_weights, make_horizon)
             self._make_PRAlpha()
+            if make_horizon:
+                self._make_horizons()
             self.action_space = gym.spaces.Discrete(len(networkx_graph.nodes))
             self.observation_space = gym.spaces.Tuple((
                 gym.spaces.Discrete(len(networkx_graph.nodes)),
@@ -47,7 +50,7 @@ class ShortestRouteEnv(gym.Env):
             ))
         return self.graph.position
 
-    def __make_R(self, shortest):
+    def _make_R(self):
         self.R = self.graph.adj_mat.copy().astype("float64")
 
         max_r = np.max(self.R)
@@ -55,24 +58,11 @@ class ShortestRouteEnv(gym.Env):
         # Make non-existent transitions very bad to use
         self.R[self.R == -1] = max_r * 10
 
-        # make all weights non-zero                                                                       2
-        # using a simple + 1 doesn't work because it breaks these arrangements (start at A and go to B): A--C
-        #                                                                                             10 |  | 2
-        #                                                                                                B--D
-        #                                                                                                 5
-        self.R = self.R + 1 / (10*len(self.graph.ngraph.nodes))
-
-        self.R = -1 * self.R    # make rewards negative
+        self.R = -1 * self.R  # make rewards negative
 
         # The incentive to go to the goal is that once there, the agent can "spin" on it, gaining no negative rewards
-        self.R[self.graph.goal, self.graph.goal] = 0
-
-        if not shortest:
-            self.R = 1/self.R
-
-    # a bit weird, but allows us to redefine it easily in LongestRouteEnv
-    def _make_R(self):
-        self.__make_R(True)
+        if not self.graph.made_horizon:
+            self.R[self.graph.goal, self.graph.goal] = 0 + 1 / (1000 * len(self.graph.ngraph.nodes))
 
     def _make_PRAlpha(self):
         adj_mat = self.graph.adj_mat.copy()
@@ -129,7 +119,7 @@ class ShortestRouteEnv(gym.Env):
             layout_function = "spring"
             if self.graph.was_directed:
                 layout_function = "shell"
-            elif self.graph.make_horizon:
+            elif self.graph.made_horizon:
                 layout_function = "horizon"
 
         def is_in_ipython():
@@ -143,8 +133,6 @@ class ShortestRouteEnv(gym.Env):
             from gym.envs.classic_control import rendering
         import matplotlib.pyplot as plt
         import networkx as nx
-
-
 
         if self.viewer is None:
             if not is_in_ipython():
@@ -172,11 +160,13 @@ class ShortestRouteEnv(gym.Env):
         colors[list(self.graph.ngraph.nodes).index(self.graph.origin)] = "pink"
         colors[list(self.graph.ngraph.nodes).index(self.graph.position)] = "red"
 
+        optimal_path = self.graph.dijkstra_bigram
+
         edge_colors = []
         for edge in self.graph.ngraph.edges:
             if edge in self.graph.path_bigram:
                 edge_colors.append("pink")
-            elif edge in self.graph.dijkstra_bigram:
+            elif edge in optimal_path:
                 edge_colors.append("blue")
             else:
                 edge_colors.append("black")
@@ -208,6 +198,7 @@ class ShortestRouteEnv(gym.Env):
         else:
             plt.close(fig)
             self.viewer.imshow(image_from_plot)
+        import time
         time.sleep(human_reading_delay)
 
     def close(self):
@@ -216,9 +207,19 @@ class ShortestRouteEnv(gym.Env):
         except:
             pass
 
-class LongestRouteEnv(ShortestRouteEnv):
-    def _make_R(self):
-        self.__make_R(1)
+    def _make_horizons(self):
+        self.horizon_states = self.graph.horizon_states[:-1]
+        self.horizon_acts = self.graph.horizon_acts[:-1]
+        self.horizon_rews = copy.deepcopy(self.horizon_acts)
+
+        for i, epoch in enumerate(self.horizon_acts):
+            for j, state_acts in enumerate(epoch):
+                for k, act in enumerate(state_acts):
+                    rew = self.graph.adj_mat[self.horizon_states[i][j],act]
+                    if rew == -1:
+                        rew = np.max(self.graph.adj_mat)
+
+                    self.horizon_rews[i][j][k] = -1 * rew
 
 import random
 import networkx as nx
