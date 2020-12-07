@@ -17,7 +17,7 @@ def env_gen(n):
             for bad_f in ["truncated_tetrahedron_graph", "chvatal_graph",
                           "desargues_graph", "heawood_graph",
                           "dodecahedral_graph", "icosahedral_graph",
-                          "pappus_graph", "moebius_kantor_graph"]:
+                          "pappus_graph", "moebius_kantor_graph", "sedgewick_maze_graph"]:
                 if bad_f in str(f):
                     small_generators.remove(f)
 
