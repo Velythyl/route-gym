@@ -7,7 +7,7 @@ import networkx as nx
 from routegym.env import ShortestRouteEnv
 from routegym.train import get_policy_iteration, get_backward_induction_actions
 
-MAKE_HORIZON = False
+MAKE_HORIZON = True
 
 def env_gen(n):
     small_generators = [a for _, a in getmembers(nx.generators.small, isfunction)]
