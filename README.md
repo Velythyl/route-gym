@@ -1,7 +1,7 @@
 # Route-Gym
 An openai gym that allows agent to solve shortest and longest route problems.
 
-These simples are simple for humans, and can be computed easily by hand using Dijkstra's algorithm
+These problems are simple for humans, and can be computed easily by hand using Dijkstra's algorithm
 and its variants like A* (computation time permitting). As we work towards AGI, it is of my opinion that our complicated general-purpose
 algorithms should be asked to solve these simple problems. If convergence is slow, or if the supposedly 
 "general" algorithm can't solve it easily,
